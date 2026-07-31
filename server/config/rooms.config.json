@@ -1,0 +1,195 @@
+{
+  "_说明": "房间预设配置。首次启动时若数据库为空将自动导入本文件。可按需修改房间数量与基础信息后删除 data.db 重新初始化。floor 取值：一楼 / 四五楼。",
+  "rooms": [
+    {
+      "floor": "一楼",
+      "roomNumber": "101",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "102",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "103",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "104",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "105",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "106",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "107",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "108",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "109",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "一楼",
+      "roomNumber": "110",
+      "monthlyRent": 800,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2023-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "四楼",
+      "roomNumber": "401",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "四楼",
+      "roomNumber": "402",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "四楼",
+      "roomNumber": "403",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "四楼",
+      "roomNumber": "404",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "四楼",
+      "roomNumber": "405",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "五楼",
+      "roomNumber": "501",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "五楼",
+      "roomNumber": "502",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "五楼",
+      "roomNumber": "503",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    },
+    {
+      "floor": "五楼",
+      "roomNumber": "504",
+      "monthlyRent": 500,
+      "waterUnitPrice": 5,
+      "electricityUnitPrice": 1.2,
+      "startDate": "2014-01-01",
+      "initialWater": 0,
+      "initialElectricity": 0
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '../api.js';
-import { money, num, buildCopyText, copyText, showToast, currentYM, monthOptions, yearOptions } from '../utils.js';
+import { money, num, buildCopyText, copyText, showToast, currentYM, yearOptions } from '../utils.js';
+import MonthPicker from '../MonthPicker.jsx';
 
 export default function CurrentMonth() {
   const { year: cy, month: cm } = currentYM();
@@ -12,9 +13,17 @@ export default function CurrentMonth() {
   const [activeFloor, setActiveFloor] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [archiving, setArchiving] = useState(false);
+  const [archivedMonths, setArchivedMonths] = useState(() => new Set());
   const saveTimers = useRef({});
   const dataRef = useRef(null);
   useEffect(() => { dataRef.current = data; }, [data]);
+
+  // 加载已存档年月列表（用于在 MonthPicker 中禁用已存档月份）
+  useEffect(() => {
+    api.getHistory().then((rows) => {
+      setArchivedMonths(new Set(rows.map((r) => `${r.year}-${r.month}`)));
+    }).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,6 +43,7 @@ export default function CurrentMonth() {
   useEffect(() => { load(); }, [load]);
 
   // 输入即时更新本地 + 防抖保存
+  // field 支持：water_reading / electricity_reading / prev_water / prev_elec / rent / water_price / elec_price
   const handleInput = (roomId, field, value) => {
     setData((prev) => {
       if (!prev) return prev;
@@ -41,25 +51,42 @@ export default function CurrentMonth() {
       for (const f of Object.keys(grouped)) {
         grouped[f] = grouped[f].map((item) => {
           if (item.room_id !== roomId) return item;
-          const room = item.room;
-          const newReading = {
-            ...item,
-            [field]: value === '' ? null : Number(value),
-          };
+          const updated = { ...item };
+          if (field === 'prev_water' || field === 'prev_elec') {
+            // 编辑上期：写入 custom，同步生效的 prev
+            const isWater = field === 'prev_water';
+            const customKey = isWater ? 'prev_water_custom' : 'prev_electricity_custom';
+            const prevKey = isWater ? 'prev_water_reading' : 'prev_electricity_reading';
+            if (value === '' || value === null) {
+              updated[customKey] = null;
+              updated[prevKey] = isWater ? item.default_prev_water : item.default_prev_elec;
+            } else {
+              updated[customKey] = Number(value);
+              updated[prevKey] = Number(value);
+            }
+          } else if (field === 'rent' || field === 'water_price' || field === 'elec_price') {
+            // 当月覆盖租金/单价：写 custom，空=恢复预设
+            const keyMap = { rent: 'custom_monthly_rent', water_price: 'custom_water_unit_price', elec_price: 'custom_electricity_unit_price' };
+            updated[keyMap[field]] = value === '' || value === null ? null : Number(value);
+          } else {
+            updated[field] = value === '' ? null : Number(value);
+          }
+          // 合并 custom 值到 room 用于计算
+          const calcRoom = mergeCustomRoom(item.room, updated);
           const draft = {
-            water_reading: newReading.water_reading,
-            electricity_reading: newReading.electricity_reading,
-            prev_water_reading: newReading.prev_water_reading,
-            prev_electricity_reading: newReading.prev_electricity_reading,
+            water_reading: updated.water_reading,
+            electricity_reading: updated.electricity_reading,
+            prev_water_reading: updated.prev_water_reading,
+            prev_electricity_reading: updated.prev_electricity_reading,
           };
-          const calc = calcLocal(room, draft);
-          return { ...newReading, calc };
+          const calc = calcLocal(calcRoom, draft);
+          return { ...updated, calc };
         });
       }
       return { ...prev, grouped };
     });
 
-    // 防抖保存：从最新状态读取两个读数
+    // 防抖保存
     clearTimeout(saveTimers.current[roomId]);
     saveTimers.current[roomId] = setTimeout(async () => {
       try {
@@ -68,11 +95,26 @@ export default function CurrentMonth() {
           room_id: roomId, year, month,
           water_reading: item?.water_reading ?? null,
           electricity_reading: item?.electricity_reading ?? null,
+          prev_water_custom: item?.prev_water_custom,
+          prev_electricity_custom: item?.prev_electricity_custom,
+          custom_monthly_rent: item?.custom_monthly_rent,
+          custom_water_unit_price: item?.custom_water_unit_price,
+          custom_electricity_unit_price: item?.custom_electricity_unit_price,
         });
       } catch (err) {
         showToast('保存失败: ' + err.message);
       }
     }, 500);
+  };
+
+  // 恢复默认租金/单价
+  const handleResetPrice = (roomId, type) => {
+    handleInput(roomId, type, '');
+  };
+
+  // 恢复默认上期读数
+  const handleResetPrev = (roomId, type) => {
+    handleInput(roomId, type === 'water' ? 'prev_water' : 'prev_elec', '');
   };
 
   const handleCopy = async (item) => {
@@ -98,12 +140,32 @@ export default function CurrentMonth() {
     try {
       await api.archiveMonth(year, month);
       showToast('已存档上传');
+      setArchivedMonths((prev) => new Set(prev).add(`${year}-${month}`));
       await load();
     } catch (e) {
       showToast('存档失败: ' + e.message);
     } finally {
       setArchiving(false);
     }
+  };
+
+  // 标记/取消异常项
+  const handleException = async (item) => {
+    const cur = item.exception_note || '';
+    const note = window.prompt('标记异常项（填写异常原因，留空或清除则取消标记）：', cur);
+    if (note === null) return; // 取消输入
+    try {
+      await api.markException(item.id, note);
+      setData((prev) => {
+        if (!prev) return prev;
+        const grouped = { ...prev.grouped };
+        for (const f of Object.keys(grouped)) {
+          grouped[f] = grouped[f].map((it) => it.id === item.id ? { ...it, exception_note: note === '' ? null : note } : it);
+        }
+        return { ...prev, grouped };
+      });
+      showToast(note === '' ? '已取消异常标记' : '已标记异常');
+    } catch (e) { showToast('标记失败: ' + e.message); }
   };
 
   if (loading) return <div className="loading">加载中…</div>;
@@ -122,17 +184,16 @@ export default function CurrentMonth() {
       </div>
 
       <div className="page">
-        <div className="month-bar tight">
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
-            {yearOptions(5).map((y) => <option key={y} value={y}>{y}年</option>)}
-          </select>
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-            {monthOptions().map((m) => <option key={m} value={m}>{m}月</option>)}
-          </select>
-          {archived ? <span className="archived-tag">已存档</span> : <span className="draft-tag">未存档</span>}
-        </div>
+        <MonthPicker
+          year={year}
+          month={month}
+          years={yearOptions()}
+          onChange={(y, m) => { setYear(y); setMonth(m); }}
+          archivedMonths={archivedMonths}
+          extra={archived ? <span className="archived-tag">已存档</span> : <span className="draft-tag">未存档</span>}
+        />
 
-        {floors.length > 0 && (
+        {floors.length > 0 && !archived && (
           <div className="floor-tabs">
             {floors.map((f) => (
               <button key={f} className={activeFloor === f ? 'active' : ''} onClick={() => setActiveFloor(f)}>{f}</button>
@@ -140,37 +201,88 @@ export default function CurrentMonth() {
           </div>
         )}
 
-        {items.map((item) => (
-          <RoomCard key={item.room_id} item={item} onInput={handleInput} onCopy={handleCopy} copied={copiedId === item.room_id} archived={archived} />
-        ))}
+        {archived ? (
+          <div className="empty">该月已存档，不再显示明细。可在「历史」查看或修改存档数据。</div>
+        ) : (
+          <>
+            {items.map((item) => (
+              <RoomCard key={item.room_id} item={item} onInput={handleInput} onResetPrev={handleResetPrev} onResetPrice={handleResetPrice} onCopy={handleCopy} onException={handleException} copied={copiedId === item.room_id} archived={archived} />
+            ))}
 
-        {!archived && (
-          <div className="archive-bar">
-            <button onClick={handleArchive} disabled={archiving || !hasAnyInput}>
-              {archiving ? '存档中…' : `保存并上传 ${year}年${month}月 数据`}
-            </button>
-          </div>
+            <div className="archive-bar">
+              <button onClick={handleArchive} disabled={archiving || !hasAnyInput}>
+                {archiving ? '存档中…' : `保存并上传 ${year}年${month}月 数据`}
+              </button>
+            </div>
+          </>
         )}
-        {archived && <div className="empty">该月已存档，可在「历史」查看；如需修改请到历史页编辑</div>}
       </div>
     </>
   );
 }
 
-function RoomCard({ item, onInput, onCopy, copied, archived }) {
+function RoomCard({ item, onInput, onResetPrev, onResetPrice, onCopy, onException, copied, archived }) {
   const { room, calc, tenant } = item;
+  const waterCustom = item.prev_water_custom !== null && item.prev_water_custom !== undefined;
+  const elecCustom = item.prev_electricity_custom !== null && item.prev_electricity_custom !== undefined;
+  const rentCustom = item.custom_monthly_rent !== null && item.custom_monthly_rent !== undefined;
+  const wupCustom = item.custom_water_unit_price !== null && item.custom_water_unit_price !== undefined;
+  const eupCustom = item.custom_electricity_unit_price !== null && item.custom_electricity_unit_price !== undefined;
+  const hasException = item.exception_note !== null && item.exception_note !== undefined && item.exception_note !== '';
+  // 生效值（用于显示）
+  const effRent = rentCustom ? item.custom_monthly_rent : room.monthly_rent;
+  const effWup = wupCustom ? item.custom_water_unit_price : room.water_unit_price;
+  const effEup = eupCustom ? item.custom_electricity_unit_price : room.electricity_unit_price;
+  const [showPrice, setShowPrice] = useState(false);
   return (
     <div className="room-card">
       <div className="room-head">
         <span className="room-no">{room.room_number}</span>
         {tenant ? <span className="tenant-name">{tenant.name}{tenant.occupants ? ` · ${tenant.occupants}人` : ''}</span> : <span className="tenant-name no-tenant">未设置租客</span>}
+        <button
+          className={'exc-btn' + (hasException ? ' active' : '')}
+          onClick={() => onException(item)}
+          title="标记异常项"
+        >
+          {hasException ? '⚠ 异常' : '标记异常'}
+        </button>
       </div>
+      {hasException && <div className="exc-note">⚠ {item.exception_note}</div>}
       <div className="room-meta">
-        <span><b>租金</b> {money(room.monthly_rent)}元/月</span>
-        <span><b>水</b> {num(room.water_unit_price)}元/吨</span>
-        <span><b>电</b> {num(room.electricity_unit_price)}元/度</span>
-        <span><b>启用</b> {room.start_date || '—'}</span>
+        <span><b>租金</b> {money(effRent)}元/月{rentCustom && <i className="custom-flag">自定义</i>}</span>
+        <span><b>水</b> {num(effWup)}元/吨{wupCustom && <i className="custom-flag">自定义</i>}</span>
+        <span><b>电</b> {num(effEup)}元/度{eupCustom && <i className="custom-flag">自定义</i>}</span>
+        {!archived && (
+          <button className="link-btn toggle-price-btn" onClick={() => setShowPrice((v) => !v)}>
+            {showPrice ? '收起' : '改价'}
+          </button>
+        )}
       </div>
+
+      {showPrice && !archived && (
+        <div className="price-edit">
+          <div className="row-3">
+            <div className="field">
+              <label>月租金（元）</label>
+              <input type="number" inputMode="decimal" step="1" value={rentCustom ? item.custom_monthly_rent : ''} onChange={(e) => onInput(item.room_id, 'rent', e.target.value)} placeholder={num(room.monthly_rent)} />
+            </div>
+            <div className="field">
+              <label>水单价（元/吨）</label>
+              <input type="number" inputMode="decimal" step="1" value={wupCustom ? item.custom_water_unit_price : ''} onChange={(e) => onInput(item.room_id, 'water_price', e.target.value)} placeholder={num(room.water_unit_price)} />
+            </div>
+            <div className="field">
+              <label>电单价（元/度）</label>
+              <input type="number" inputMode="decimal" step="1" value={eupCustom ? item.custom_electricity_unit_price : ''} onChange={(e) => onInput(item.room_id, 'elec_price', e.target.value)} placeholder={num(room.electricity_unit_price)} />
+            </div>
+          </div>
+          {(rentCustom || wupCustom || eupCustom) && (
+            <button className="reset-prev-btn" onClick={() => { setShowPrice(false); if (rentCustom) onResetPrice(item.room_id, 'rent'); if (wupCustom) onResetPrice(item.room_id, 'water_price'); if (eupCustom) onResetPrice(item.room_id, 'elec_price'); }}>
+              恢复预设
+            </button>
+          )}
+          <div className="price-edit-hint">留空使用房间预设；输入后仅当月生效，不影响其他月份</div>
+        </div>
+      )}
 
       <div className="input-grid">
         <div className="input-cell">
@@ -178,26 +290,56 @@ function RoomCard({ item, onInput, onCopy, copied, archived }) {
           <input
             type="number"
             inputMode="decimal"
-            step="0.01"
+            step="1"
             value={item.water_reading ?? ''}
             onChange={(e) => onInput(item.room_id, 'water_reading', e.target.value)}
             disabled={archived}
             placeholder="水表抄表"
           />
-          <div className="prev">上期 {num(item.prev_water_reading)}</div>
+          <div className="prev-row">
+            <span className="prev-label">上期</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="1"
+              className="prev-input"
+              value={item.prev_water_reading ?? ''}
+              onChange={(e) => onInput(item.room_id, 'prev_water', e.target.value)}
+              disabled={archived}
+              placeholder="0"
+            />
+            {waterCustom && !archived && (
+              <button className="reset-prev-btn" onClick={() => onResetPrev(item.room_id, 'water')}>恢复默认</button>
+            )}
+          </div>
         </div>
         <div className="input-cell">
           <label>电表读数（度）</label>
           <input
             type="number"
             inputMode="decimal"
-            step="0.01"
+            step="1"
             value={item.electricity_reading ?? ''}
             onChange={(e) => onInput(item.room_id, 'electricity_reading', e.target.value)}
             disabled={archived}
             placeholder="电表抄表"
           />
-          <div className="prev">上期 {num(item.prev_electricity_reading)}</div>
+          <div className="prev-row">
+            <span className="prev-label">上期</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="1"
+              className="prev-input"
+              value={item.prev_electricity_reading ?? ''}
+              onChange={(e) => onInput(item.room_id, 'prev_elec', e.target.value)}
+              disabled={archived}
+              placeholder="0"
+            />
+            {elecCustom && !archived && (
+              <button className="reset-prev-btn" onClick={() => onResetPrev(item.room_id, 'elec')}>恢复默认</button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -217,6 +359,16 @@ function RoomCard({ item, onInput, onCopy, copied, archived }) {
       )}
     </div>
   );
+}
+
+// 合并房间预设与当月覆盖值，用于本地计算
+function mergeCustomRoom(room, item) {
+  return {
+    ...room,
+    monthly_rent: item.custom_monthly_rent !== null && item.custom_monthly_rent !== undefined ? item.custom_monthly_rent : room.monthly_rent,
+    water_unit_price: item.custom_water_unit_price !== null && item.custom_water_unit_price !== undefined ? item.custom_water_unit_price : room.water_unit_price,
+    electricity_unit_price: item.custom_electricity_unit_price !== null && item.custom_electricity_unit_price !== undefined ? item.custom_electricity_unit_price : room.electricity_unit_price,
+  };
 }
 
 // 本地计算（与后端 calcRecord 一致），用于即时反馈

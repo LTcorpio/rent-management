@@ -27,8 +27,11 @@ html, body, #root {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  text-autospace: normal;
   -webkit-font-smoothing: antialiased;
+  /* 中英文/中数字之间自动留空隙：word-spacing 处理英文单词间距，
+     text-autospace 处理中文字符与英文/数字间的空隙（移动端 Safari 与桌面 Chrome 兼容） */
+  -webkit-text-autospace: normal;
+  text-autospace: normal;
 }
 
 input, button, select, textarea { font-family: inherit; font-size: inherit; }
@@ -88,28 +91,8 @@ button { cursor: pointer; border: none; background: none; }
 .tabbar a.active { color: var(--primary); }
 .tabbar a.active .tab-ico { transform: translateY(-1px); }
 
-/* ===== 月份选择条 ===== */
-.month-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  margin-bottom: 14px;
-  box-shadow: var(--shadow);
-}
-/* 当月页 month-bar 后紧跟楼层 Tab，减小间距 */
-.month-bar.tight { margin-bottom: 8px; }
-.month-bar .m-label { font-size: 13px; color: var(--text-2); }
-.month-bar select {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px 8px;
-  background: #fff;
-  font-size: 14px;
-}
-.month-bar .archived-tag {
+/* ===== 存档状态标签（用于年月选择器头部） ===== */
+.mp-inline-head .archived-tag {
   margin-left: auto;
   font-size: 12px;
   color: #fff;
@@ -117,14 +100,42 @@ button { cursor: pointer; border: none; background: none; }
   padding: 2px 8px;
   border-radius: 10px;
 }
-.month-bar .draft-tag {
+.mp-inline-head .draft-tag {
   margin-left: auto;
   font-size: 12px;
   color: #fff;
-  background: var(--text-3);
+  background: #f5222d;
   padding: 2px 8px;
   border-radius: 10px;
 }
+
+/* ===== 右上角刷新按钮 ===== */
+/* 限制在 640px app 容器内：手机端贴右边，宽屏时贴 app 右边缘 */
+.refresh-btn {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 50;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+/* 宽屏：把按钮限制在 max-width 640px 的 app 容器右边缘内 */
+@media (min-width: 641px) {
+  .refresh-btn {
+    right: calc(50% - 320px + 8px);
+  }
+}
+.refresh-btn:active { background: rgba(255,255,255,1); color: var(--primary); }
+.refresh-ico { width: 19px; height: 19px; }
 
 /* ===== 楼层 Tab ===== */
 .floor-tabs {
@@ -176,6 +187,28 @@ button { cursor: pointer; border: none; background: none; }
   margin-bottom: 4px;
 }
 .room-meta span b { color: var(--text-2); font-weight: 500; }
+.room-meta .custom-flag {
+  font-style: normal;
+  font-size: 10px;
+  color: #fa8c16;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 3px;
+}
+.toggle-price-btn { margin-left: auto; flex-shrink: 0; }
+.price-edit {
+  margin: 8px 0 4px;
+  padding: 10px;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.price-edit .row-3 { gap: 6px; }
+.price-edit .field { margin-bottom: 6px; }
+.price-edit .field input { padding: 5px 8px; font-size: 13px; }
+.price-edit-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
 
 /* 输入区 */
 .input-grid {
@@ -194,6 +227,14 @@ button { cursor: pointer; border: none; background: none; }
   font-size: 11px;
   color: var(--text-3);
 }
+.input-cell .prev-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.input-cell .prev-label { font-size: 11px; color: var(--text-3); flex-shrink: 0; }
+.reset-prev-btn {
+  font-size: 11px; color: var(--primary);
+  padding: 2px 6px; border-radius: 4px;
+  background: rgba(22,119,255,0.06); border: 1px solid rgba(22,119,255,0.15);
+  white-space: nowrap;
+}
 .input-cell input {
   width: 100%;
   font-size: 20px;            /* 用户输入较大 */
@@ -204,6 +245,14 @@ button { cursor: pointer; border: none; background: none; }
   background: #fafbfc;
   color: var(--text);
 }
+/* 上期读数输入框（小尺寸，覆盖 .input-cell input） */
+.input-cell .prev-input {
+  width: 80px; padding: 4px 8px; font-size: 13px; font-weight: 400;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); color: var(--text-2);
+}
+.input-cell .prev-input:focus { border-color: var(--primary); outline: none; }
+.input-cell .prev-input:disabled { background: var(--bg); color: var(--text-3); }
 .input-cell input:focus {
   outline: none;
   border-color: var(--primary);
@@ -288,13 +337,32 @@ button { cursor: pointer; border: none; background: none; }
   box-shadow: var(--shadow);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
+  text-align: left;
+}
+.history-item .history-item-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  padding: 0;
   text-align: left;
 }
 .history-item .ym { font-size: 16px; font-weight: 700; }
 .history-item .sum { margin-left: auto; font-size: 18px; font-weight: 700; color: var(--total); }
 .history-item .breakdown { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.del-btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--total);
+  background: rgba(245,34,45,0.06);
+  border: 1px solid rgba(245,34,45,0.2);
+}
+.del-btn:active { background: rgba(245,34,45,0.14); }
 .empty { text-align: center; color: var(--text-3); padding: 40px 0; font-size: 14px; }
 
 /* 明细列表（历史） */
@@ -324,6 +392,7 @@ button { cursor: pointer; border: none; background: none; }
 }
 .stat-card .label { font-size: 12px; color: var(--text-3); }
 .stat-card .num { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.stat-card .num .unit { font-size: 12px; font-weight: 400; color: var(--text-3); margin-left: 3px; }
 .stat-card.water .num { color: var(--water); }
 .stat-card.elec .num { color: var(--elec); }
 .stat-card.rent .num { color: var(--rent); }
@@ -361,6 +430,10 @@ button { cursor: pointer; border: none; background: none; }
   border-bottom: 1px solid var(--border);
 }
 .report-table th { background: #fafbfc; color: var(--text-3); font-weight: 500; font-size: 11px; }
+.report-table.wide { font-size: 11px; }
+.report-table.wide th, .report-table.wide td { padding: 6px 4px; }
+.report-table.wide th:first-child, .report-table.wide td:first-child { padding-left: 10px; }
+.report-table.wide th:last-child, .report-table.wide td:last-child { padding-right: 10px; }
 .report-table td:first-child, .report-table th:first-child { text-align: left; }
 .report-table tfoot td { font-weight: 700; color: var(--total); }
 .report-table tr.no-input td { color: var(--text-3); }
@@ -428,3 +501,100 @@ button { cursor: pointer; border: none; background: none; }
 
 .loading { text-align: center; padding: 30px; color: var(--text-3); }
 .link-btn { color: var(--primary); font-size: 13px; }
+
+/* 历史详情过滤开关 */
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.filter-toggle input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+
+/* ===== 异常项标记 ===== */
+.exc-btn {
+  margin-left: auto;
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 12px;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.exc-btn.active {
+  background: #fff7e6;
+  border-color: #ffd591;
+  color: #fa8c16;
+  font-weight: 600;
+}
+.exc-link { color: #fa8c16; font-weight: 600; }
+.exc-note {
+  margin: 6px 0 2px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: #d46b08;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+/* ===== 内联年月选择器（年份下拉 + 月份平铺网格） ===== */
+.mp-inline {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px 12px;
+  margin-bottom: 12px;
+}
+.mp-inline-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mp-year-select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mp-current {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.mp-month-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.mp-month {
+  padding: 8px 0;
+  border-radius: 8px;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  transition: background 0.12s, color 0.12s, transform 0.1s;
+}
+.mp-month:active { transform: scale(0.94); }
+.mp-month.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}

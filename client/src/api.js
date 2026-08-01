@@ -30,8 +30,11 @@ export const api = {
   getMonth: (year, month) => request(`/records/month/${year}/${month}`),
   saveRecord: (data) => request('/records', { method: 'POST', body: JSON.stringify(data) }),
   archiveMonth: (year, month) => request(`/records/archive/${year}/${month}`, { method: 'POST' }),
+  markException: (id, note) => request(`/records/exception/${id}`, { method: 'PUT', body: JSON.stringify({ exception_note: note }) }),
   getHistory: () => request('/records/history'),
   getHistoryDetail: (year, month) => request(`/records/history/${year}/${month}`),
+  updateHistoryRecord: (id, data) => request(`/records/history/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteHistoryMonth: (year, month) => request(`/records/history/${year}/${month}`, { method: 'DELETE' }),
 
   // 报表
   getMonthReport: (year, month) => request(`/report/month/${year}/${month}`),

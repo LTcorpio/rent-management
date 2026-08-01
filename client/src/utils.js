@@ -74,9 +74,10 @@ export function monthOptions() {
   return opts;
 }
 
-export function yearOptions(span = 4) {
-  const y = new Date().getFullYear();
+export function yearOptions() {
+  const start = 2026;
+  const end = new Date().getFullYear() + 1;
   const opts = [];
-  for (let i = 0; i <= span; i++) opts.push(y - i);
+  for (let y = start; y <= end; y++) opts.push(y);
   return opts;
 }

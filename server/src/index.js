@@ -27,9 +27,17 @@ app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISO
 // 生产环境静态托管前端构建产物
 const clientDist = join(__dirname, '..', '..', 'client', 'dist');
 if (existsSync(clientDist)) {
-  app.use(express.static(clientDist));
+  // 带 hash 的静态资源可长期缓存
+  app.use('/assets', express.static(join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
+  // index.html 不缓存，确保总是拿到最新构建引用
+  app.get(['/', '/index.html'], (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(join(clientDist, 'index.html'));
+  });
+  app.use(express.static(clientDist, { maxAge: '1d' }));
   app.get('*', (req, res) => {
     if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not found' });
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(join(clientDist, 'index.html'));
   });
 }

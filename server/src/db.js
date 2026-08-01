@@ -19,9 +19,6 @@ CREATE TABLE IF NOT EXISTS rooms (
   monthly_rent REAL NOT NULL DEFAULT 0,
   water_unit_price REAL NOT NULL DEFAULT 0,
   electricity_unit_price REAL NOT NULL DEFAULT 0,
-  start_date TEXT,
-  initial_water REAL NOT NULL DEFAULT 0,
-  initial_electricity REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   UNIQUE(floor, room_number)
 );
@@ -47,6 +44,8 @@ CREATE TABLE IF NOT EXISTS monthly_records (
   month INTEGER NOT NULL,
   prev_water_reading REAL NOT NULL DEFAULT 0,
   prev_electricity_reading REAL NOT NULL DEFAULT 0,
+  prev_water_custom REAL,
+  prev_electricity_custom REAL,
   water_reading REAL,
   electricity_reading REAL,
   water_usage REAL,
@@ -65,6 +64,61 @@ CREATE TABLE IF NOT EXISTS monthly_records (
 );
 `);
 
+// ===== Migration：monthly_records 增加 prev_water_custom/prev_electricity_custom 列 =====
+{
+  const cols = db.prepare(`PRAGMA table_info(monthly_records)`).all();
+  const names = cols.map((c) => c.name);
+  if (!names.includes('prev_water_custom')) {
+    db.exec(`ALTER TABLE monthly_records ADD COLUMN prev_water_custom REAL`);
+    console.log('[db] 迁移 monthly_records：新增 prev_water_custom 列');
+  }
+  if (!names.includes('prev_electricity_custom')) {
+    db.exec(`ALTER TABLE monthly_records ADD COLUMN prev_electricity_custom REAL`);
+    console.log('[db] 迁移 monthly_records：新增 prev_electricity_custom 列');
+  }
+  if (!names.includes('exception_note')) {
+    db.exec(`ALTER TABLE monthly_records ADD COLUMN exception_note TEXT`);
+    console.log('[db] 迁移 monthly_records：新增 exception_note 列（异常项标记）');
+  }
+  // 当月覆盖值：NULL=用房间预设，非空=当月自定义
+  if (!names.includes('custom_monthly_rent')) {
+    db.exec(`ALTER TABLE monthly_records ADD COLUMN custom_monthly_rent REAL`);
+    console.log('[db] 迁移 monthly_records：新增 custom_monthly_rent 列');
+  }
+  if (!names.includes('custom_water_unit_price')) {
+    db.exec(`ALTER TABLE monthly_records ADD COLUMN custom_water_unit_price REAL`);
+    console.log('[db] 迁移 monthly_records：新增 custom_water_unit_price 列');
+  }
+  if (!names.includes('custom_electricity_unit_price')) {
+    db.exec(`ALTER TABLE monthly_records ADD COLUMN custom_electricity_unit_price REAL`);
+    console.log('[db] 迁移 monthly_records：新增 custom_electricity_unit_price 列');
+  }
+}
+
+// ===== Migration：旧 rooms 表含 start_date/initial_water/initial_electricity 时重建为精简结构 =====
+{
+  const col = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='rooms'`).get();
+  if (col && (col.sql.includes('initial_water') || col.sql.includes('start_date'))) {
+    console.log('[db] 迁移 rooms 表：移除 start_date/initial_water/initial_electricity');
+    db.exec(`
+      ALTER TABLE rooms RENAME TO rooms_old;
+      CREATE TABLE rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        floor TEXT NOT NULL,
+        room_number TEXT NOT NULL,
+        monthly_rent REAL NOT NULL DEFAULT 0,
+        water_unit_price REAL NOT NULL DEFAULT 0,
+        electricity_unit_price REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        UNIQUE(floor, room_number)
+      );
+      INSERT INTO rooms (id, floor, room_number, monthly_rent, water_unit_price, electricity_unit_price, created_at)
+      SELECT id, floor, room_number, monthly_rent, water_unit_price, electricity_unit_price, created_at FROM rooms_old;
+      DROP TABLE rooms_old;
+    `);
+  }
+}
+
 // ===== 首次启动种子导入 =====
 const countRow = db.prepare('SELECT COUNT(*) AS c FROM rooms').get();
 if (countRow.c === 0) {
@@ -73,8 +127,8 @@ if (countRow.c === 0) {
     const raw = readFileSync(configPath, 'utf-8');
     const config = JSON.parse(raw);
     const insert = db.prepare(`
-      INSERT INTO rooms (floor, room_number, monthly_rent, water_unit_price, electricity_unit_price, start_date, initial_water, initial_electricity)
-      VALUES (@floor, @roomNumber, @monthlyRent, @waterUnitPrice, @electricityUnitPrice, @startDate, @initialWater, @initialElectricity)
+      INSERT INTO rooms (floor, room_number, monthly_rent, water_unit_price, electricity_unit_price)
+      VALUES (@floor, @roomNumber, @monthlyRent, @waterUnitPrice, @electricityUnitPrice)
     `);
     const tx = db.transaction((rooms) => {
       for (const r of rooms) insert.run(r);

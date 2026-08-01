@@ -13,9 +13,10 @@ export default function Settings() {
       const g = await api.getRooms();
       setGrouped(g);
       const fs = Object.keys(g);
-      if (fs.length && !fs.includes(activeFloor)) setActiveFloor(fs[0]);
+      // 用函数式更新读取最新 activeFloor，避免闭包陈旧值导致保存后跳回一楼
+      setActiveFloor((prev) => (fs.length && !fs.includes(prev) ? fs[0] : prev));
     } catch (e) { showToast('加载失败: ' + e.message); }
-  }, []); // eslint-disable-line
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -63,13 +64,14 @@ export default function Settings() {
 
         <div className="setting-card">
           <h3>添加房间</h3>
-          <RoomEditForm room={{ floor: activeFloor || '一楼', room_number: '', monthly_rent: 800, water_unit_price: 3, electricity_unit_price: 1, start_date: new Date().toISOString().slice(0, 10), initial_water: 0, initial_electricity: 0 }} isNew onDone={load} onCancel={null} />
+          <RoomEditForm room={{ floor: activeFloor || '一楼', room_number: '', monthly_rent: 800, water_unit_price: 3, electricity_unit_price: 1 }} isNew onDone={load} onCancel={null} />
         </div>
 
         <div className="setting-card" style={{ fontSize: 12, color: '#9a9a9a', lineHeight: 1.7 }}>
           <b style={{ color: '#5a5a5a' }}>说明</b><br />
           · 房间预设首次启动从 server/config/rooms.config.json 导入，可在上方编辑或新增。<br />
           · 同一房间新增租客会自动将旧租客置为退租；月度记录会关联当月租客，便于租客流动时按租客归账。<br />
+          · 抄表时「上期」读数自动取该房间最近一次记录，无记录则为 0，可在此基础上修改。<br />
           · 删除 data.db 可重置全部数据后重新从配置导入。
         </div>
       </div>
@@ -122,20 +124,6 @@ function RoomEditForm({ room, isNew, onDone, onCancel }) {
         <div className="field">
           <label>电费单价（元/度）</label>
           <input type="number" inputMode="decimal" value={form.electricity_unit_price} onChange={(e) => set('electricity_unit_price', Number(e.target.value))} />
-        </div>
-      </div>
-      <div className="field">
-        <label>启用日期</label>
-        <input type="date" value={form.start_date || ''} onChange={(e) => set('start_date', e.target.value)} />
-      </div>
-      <div className="row-2">
-        <div className="field">
-          <label>初始水表（吨）</label>
-          <input type="number" inputMode="decimal" value={form.initial_water} onChange={(e) => set('initial_water', Number(e.target.value))} />
-        </div>
-        <div className="field">
-          <label>初始电表（度）</label>
-          <input type="number" inputMode="decimal" value={form.initial_electricity} onChange={(e) => set('initial_electricity', Number(e.target.value))} />
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

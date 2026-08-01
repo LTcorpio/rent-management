@@ -16,6 +16,9 @@ export default function App() {
   const loc = useLocation();
   return (
     <div className="app">
+      <button className="refresh-btn" onClick={() => window.location.reload()} aria-label="刷新">
+        <Icon name="refresh" className="refresh-ico" />
+      </button>
       <Routes>
         <Route path="/" element={<CurrentMonth />} />
         <Route path="/history" element={<History />} />

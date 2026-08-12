@@ -29,8 +29,22 @@ export default function CurrentMonth() {
     setLoading(true);
     try {
       const res = await api.getMonth(year, month);
-      setData(res);
-      const fs = Object.keys(res.grouped);
+      // 重新用本地 calc 规则计算（单项空=0，两项空=hasInput false）
+      const grouped = {};
+      for (const f of Object.keys(res.grouped)) {
+        grouped[f] = res.grouped[f].map((item) => {
+          const calcRoom = mergeCustomRoom(item.room, item);
+          const draft = {
+            water_reading: item.water_reading,
+            electricity_reading: item.electricity_reading,
+            prev_water_reading: item.prev_water_reading,
+            prev_electricity_reading: item.prev_electricity_reading,
+          };
+          return { ...item, calc: calcLocal(calcRoom, draft) };
+        });
+      }
+      setData({ ...res, grouped });
+      const fs = Object.keys(grouped);
       setFloors(fs);
       if (fs.length && !fs.includes(activeFloor)) setActiveFloor(fs[0]);
     } catch (e) {
@@ -168,19 +182,17 @@ export default function CurrentMonth() {
     } catch (e) { showToast('标记失败: ' + e.message); }
   };
 
-  if (loading) return <div className="loading">加载中…</div>;
-  if (!data) return <div className="empty">暂无房间，请到设置中添加</div>;
-
-  const items = data.grouped[activeFloor] || [];
-  const allItems = Object.values(data.grouped).flat();
-  const archived = allItems.length > 0 && allItems.every((i) => i.archived === 1);
+  // 派生数据仅在 data 存在时计算
+  const items = data?.grouped?.[activeFloor] || [];
+  const allItems = data ? Object.values(data.grouped).flat() : [];
+  const archived = data && allItems.length > 0 && allItems.every((i) => i.archived === 1);
   const hasAnyInput = allItems.some((i) => i.calc?.hasInput);
 
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">当月收租</h1>
-        <div className="page-sub">输入抄表读数，自动计算房租，复制后发给租客</div>
+        <div className="page-sub">输入抄表读数，自动计算房租</div>
       </div>
 
       <div className="page">
@@ -193,29 +205,47 @@ export default function CurrentMonth() {
           extra={archived ? <span className="archived-tag">已存档</span> : <span className="draft-tag">未存档</span>}
         />
 
-        {floors.length > 0 && !archived && (
-          <div className="floor-tabs">
-            {floors.map((f) => (
-              <button key={f} className={activeFloor === f ? 'active' : ''} onClick={() => setActiveFloor(f)}>{f}</button>
-            ))}
-          </div>
-        )}
+        {/* 内容区：切换年月时遮罩 + 加载动画，保留 MonthPicker 可见 */}
+        <div className="report-content-wrap">
+          {data && (
+            <div className={'report-content' + (loading ? ' masked' : '')}>
+              {floors.length > 0 && !archived && (
+                <div className="floor-tabs">
+                  {floors.map((f) => (
+                    <button key={f} className={activeFloor === f ? 'active' : ''} onClick={() => setActiveFloor(f)}>{f}</button>
+                  ))}
+                </div>
+              )}
 
-        {archived ? (
-          <div className="empty">该月已存档，不再显示明细。可在「历史」查看或修改存档数据。</div>
-        ) : (
-          <>
-            {items.map((item) => (
-              <RoomCard key={item.room_id} item={item} onInput={handleInput} onResetPrev={handleResetPrev} onResetPrice={handleResetPrice} onCopy={handleCopy} onException={handleException} copied={copiedId === item.room_id} archived={archived} />
-            ))}
+              {archived ? (
+                <div className="empty">该月已存档，不再显示明细。可在「历史」查看或修改存档数据。</div>
+              ) : (
+                <>
+                  {items.map((item) => (
+                    <RoomCard key={item.room_id} item={item} onInput={handleInput} onResetPrev={handleResetPrev} onResetPrice={handleResetPrice} onCopy={handleCopy} onException={handleException} copied={copiedId === item.room_id} archived={archived} />
+                  ))}
 
-            <div className="archive-bar">
-              <button onClick={handleArchive} disabled={archiving || !hasAnyInput}>
-                {archiving ? '存档中…' : `保存并上传 ${year}年${month}月 数据`}
-              </button>
+                  <div className="archive-bar">
+                    <button onClick={handleArchive} disabled={archiving || !hasAnyInput}>
+                      {archiving ? '存档中…' : `保存并上传 ${year}年${month}月 数据`}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
-          </>
-        )}
+          )}
+
+          {/* 加载遮罩：覆盖在内容区上方 */}
+          {loading && (
+            <div className="loading-overlay">
+              <div className="spinner" />
+              <span>加载中…</span>
+            </div>
+          )}
+
+          {/* 首次加载且无数据 */}
+          {!loading && !data && <div className="empty">暂无房间，请到设置中添加</div>}
+        </div>
       </div>
     </>
   );
@@ -371,20 +401,23 @@ function mergeCustomRoom(room, item) {
   };
 }
 
-// 本地计算（与后端 calcRecord 一致），用于即时反馈
+// 本地计算（当月页专用规则）：单项空=按 0 计算，两项均空=hasInput false（外层不显示结果）
+// hasWater/hasElec 标记是否实际输入，用于复制文本决定是否包含该行
 function calcLocal(room, rec) {
   const wr = rec.water_reading === null || rec.water_reading === undefined || rec.water_reading === '' ? null : Number(rec.water_reading);
   const er = rec.electricity_reading === null || rec.electricity_reading === undefined || rec.electricity_reading === '' ? null : Number(rec.electricity_reading);
   const pw = Number(rec.prev_water_reading) || 0;
   const pe = Number(rec.prev_electricity_reading) || 0;
-  const r2 = (n) => (n === null ? null : Math.round((n + Number.EPSILON) * 100) / 100);
-  const waterUsage = wr !== null ? r2(wr - pw) : null;
-  const elecUsage = er !== null ? r2(er - pe) : null;
-  const waterFee = waterUsage !== null ? r2(waterUsage * Number(room.water_unit_price)) : null;
-  const elecFee = elecUsage !== null ? r2(elecUsage * Number(room.electricity_unit_price)) : null;
+  const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+  const hasWater = wr !== null;
+  const hasElec = er !== null;
+  const waterUsage = hasWater ? r2(wr - pw) : 0;
+  const elecUsage = hasElec ? r2(er - pe) : 0;
+  const waterFee = r2(waterUsage * Number(room.water_unit_price));
+  const elecFee = r2(elecUsage * Number(room.electricity_unit_price));
   const rent = Number(room.monthly_rent) || 0;
-  const total = waterFee !== null && elecFee !== null ? r2(waterFee + elecFee + rent) : null;
-  return { hasInput: wr !== null || er !== null, waterUsage, elecUsage, waterFee, elecFee, rent, total };
+  const total = r2(waterFee + elecFee + rent);
+  return { hasInput: hasWater || hasElec, hasWater, hasElec, waterUsage, elecUsage, waterFee, elecFee, rent, total };
 }
 
 function findItem(data, roomId) {

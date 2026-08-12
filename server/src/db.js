@@ -6,7 +6,12 @@ import { readFileSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const dbPath = join(__dirname, '..', 'data.db');
+// 支持通过环境变量指定数据库路径（Docker 等场景将 DB 放到容器外持久化目录）
+// 开发时可在 server/.env 中配置：DB_PATH=/path/to/data.db
+const dbPath = process.env.DB_PATH
+  ? (process.env.DB_PATH.endsWith('.db') ? process.env.DB_PATH : join(process.env.DB_PATH, 'data.db'))
+  : join(__dirname, '..', 'data.db');
+console.log('[db] 数据库路径:', dbPath);
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 

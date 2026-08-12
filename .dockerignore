@@ -1,0 +1,12 @@
+**/node_modules
+**/.DS_Store
+client/dist
+server/data.db
+server/data.db-shm
+server/data.db-wal
+.git
+.gitignore
+Dockerfile
+.dockerignore
+docker-compose.yml
+*.md

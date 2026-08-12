@@ -14,12 +14,13 @@ export function num(n) {
 }
 
 // 生成复制文本
+// calc.hasWater/hasElec 标记是否实际输入（未输入则不包含对应行）
 export function buildCopyText({ roomNumber, month, tenantName, calc }) {
-  const { waterUsage, waterFee, elecUsage, elecFee, rent, total } = calc;
+  const { hasWater, hasElec, waterUsage, waterFee, elecUsage, elecFee, rent, total } = calc;
   const head = tenantName ? `${tenantName}（${roomNumber}）${month}月` : `${roomNumber}房间${month}月`;
   const segs = [];
-  if (waterUsage !== null && waterUsage !== undefined) segs.push(`用水${num(waterUsage)}吨${money(waterFee)}元`);
-  if (elecUsage !== null && elecUsage !== undefined) segs.push(`用电${num(elecUsage)}度${money(elecFee)}元`);
+  if (hasWater) segs.push(`用水${num(waterUsage)}吨${money(waterFee)}元`);
+  if (hasElec) segs.push(`用电${num(elecUsage)}度${money(elecFee)}元`);
   segs.push(`房租${money(rent)}元`);
   segs.push(`共计${money(total)}元`);
   return head + segs.join('、');

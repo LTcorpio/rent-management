@@ -14,6 +14,7 @@ export default function History() {
 function HistoryList() {
   const navigate = useNavigate();
   const [list, setList] = useState(null);
+  const [selYear, setSelYear] = useState(null);
   const load = useCallback(async () => {
     try { setList(await api.getHistory()); }
     catch (e) { showToast('加载失败: ' + e.message); }
@@ -29,6 +30,11 @@ function HistoryList() {
     } catch (e) { showToast('删除失败: ' + e.message); }
   };
 
+  // 提取年份（降序，越新越靠前）
+  const years = list ? [...new Set(list.map((r) => r.year))].sort((a, b) => b - a) : [];
+  const effectiveYear = selYear != null ? selYear : years[0];
+  const filtered = list ? list.filter((r) => r.year === effectiveYear) : [];
+
   return (
     <>
       <div className="page-header">
@@ -38,18 +44,29 @@ function HistoryList() {
       <div className="page">
         {!list ? <div className="loading">加载中…</div> :
          list.length === 0 ? <div className="empty">暂无已存档月份<br />在「当月」页面保存上传后此处可查看</div> :
-         list.map((r) => (
-           <div key={`${r.year}-${r.month}`} className="history-item">
-             <button className="history-item-main" onClick={() => navigate(`/history/${r.year}/${r.month}`)}>
-               <div>
-                 <div className="ym">{r.year} 年 {r.month} 月</div>
-                 <div className="breakdown">水 {money(r.total_water)} · 电 {money(r.total_elec)} · 租 {money(r.total_rent)} · {r.valid_room_count}/{r.room_count} 间</div>
-               </div>
-               <div className="sum">{money(r.total_amount)}</div>
-             </button>
-             <button className="del-btn" onClick={() => handleDelete(r.year, r.month)} aria-label="删除">删除</button>
-           </div>
-         ))}
+         <>
+          {years.length > 0 && (
+            <div className="year-tabs">
+              {years.map((y) => (
+                <button key={y} className={effectiveYear === y ? 'active' : ''} onClick={() => setSelYear(y)}>{y}年</button>
+              ))}
+            </div>
+          )}
+          {filtered.length === 0 ? <div className="empty">{effectiveYear}年 暂无存档</div> :
+           filtered.map((r) => (
+             <div key={`${r.year}-${r.month}`} className="history-item">
+               <button className="history-item-main" onClick={() => navigate(`/history/${r.year}/${r.month}`)}>
+                 <div>
+                   <div className="ym">{r.year} 年 {r.month} 月</div>
+                   <div className="breakdown">水 {money(r.total_water)} · 电 {money(r.total_elec)} · 租 {money(r.total_rent)} · {r.valid_room_count}/{r.room_count} 间</div>
+                 </div>
+                 <div className="sum">{money(r.total_amount)}</div>
+               </button>
+               <button className="del-btn" onClick={() => handleDelete(r.year, r.month)} aria-label="删除">删除</button>
+             </div>
+           ))}
+         </>
+        }
       </div>
     </>
   );
@@ -77,6 +94,8 @@ function HistoryDetail({ year, month }) {
 
   const handleCopy = async (row) => {
     const calc = {
+      hasWater: row.water_usage !== null && row.water_usage !== undefined,
+      hasElec: row.electricity_usage !== null && row.electricity_usage !== undefined,
       waterUsage: row.water_usage, elecUsage: row.electricity_usage,
       waterFee: row.water_fee, elecFee: row.electricity_fee, rent: row.rent, total: row.total,
     };
@@ -171,10 +190,8 @@ function HistoryDetail({ year, month }) {
   return (
     <>
       <div className="page-header">
+        <button className="back-btn" onClick={() => navigate('/history')}>← 返回历史列表</button>
         <h1 className="page-title">{year} 年 {month} 月 明细</h1>
-        <div className="page-sub">
-          <button className="link-btn" onClick={() => navigate('/history')}>← 返回历史列表</button>
-        </div>
       </div>
       <div className="page">
         <label className="filter-toggle">

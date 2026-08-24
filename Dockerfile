@@ -8,31 +8,30 @@ RUN npm ci
 COPY client/ ./
 RUN npm run build
 
-# ===== Stage 2: 构建服务端依赖（含 better-sqlite3 原生编译） =====
-FROM node:20-alpine AS server-build
-RUN apk add --no-cache python3 make g++
+# ===== Stage 2: 构建服务端（Go 静态编译，无需 cgo） =====
+FROM golang:1.26-alpine AS server-build
 WORKDIR /build/server
-COPY server/package.json server/package-lock.json ./
-RUN npm ci --omit=dev
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+COPY server/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
 # ===== Stage 3: 运行时 =====
-FROM node:20-alpine AS runtime
-ENV NODE_ENV=production
+FROM alpine:3.20 AS runtime
 ENV PORT=9097
 ENV DB_PATH=/data/data.db
-WORKDIR /app
+# 工作目录设为 /app/server：与本地开发一致（config 位于 ./config，前端产物位于 ../client/dist）
+WORKDIR /app/server
 
-# 拷贝服务端源码与已编译依赖
-COPY --from=server-build /build/server/node_modules ./server/node_modules
-COPY server/src ./server/src
-COPY server/package.json ./server/
-COPY server/config ./server/config
+# 拷贝服务端二进制与房间配置
+COPY --from=server-build /out/server ./server
+COPY server/config ./config
 
-# 拷贝前端构建产物（index.js 通过相对路径引用 ../../client/dist）
-COPY --from=client-build /build/client/dist ./client/dist
+# 拷贝前端构建产物（相对路径 ../client/dist）
+COPY --from=client-build /build/client/dist ../client/dist
 
 # 数据库持久化目录（由 docker-compose 挂载到宿主机）
 RUN mkdir -p /data
 
 EXPOSE 9097
-CMD ["node", "server/src/index.js"]
+CMD ["./server"]

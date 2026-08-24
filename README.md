@@ -12,7 +12,7 @@
 ## 技术栈
 
 - 前端：React 18 + React Router + Vite
-- 后端：Node.js + Express + better-sqlite3 (SQLite)
+- 后端：Go + net/http + modernc.org/sqlite (SQLite，纯 Go 驱动，无需 cgo)
 - 部署：Docker / docker-compose
 
 ## 目录结构
@@ -31,15 +31,17 @@ rent-management/
 │   ├── index.html
 │   ├── vite.config.js      # 自动读取 server/.env 的 PORT 做代理
 │   └── package.json
-├── server/                 # 后端
-│   ├── src/
-│   │   ├── index.js        # Express 入口，加载 dotenv
-│   │   ├── db.js           # SQLite 连接、建表、迁移、种子导入
-│   │   ├── calc.js         # 费用计算逻辑
-│   │   └── routes/         # rooms / tenants / records / report
+├── server/                 # 后端（Go）
+│   ├── cmd/server/main.go  # 服务入口：启动 HTTP 服务
+│   ├── internal/
+│   │   ├── api/            # HTTP 路由与处理器（rooms / tenants / records / report / 静态托管）
+│   │   ├── calc/           # 费用计算逻辑
+│   │   ├── store/          # SQLite 打开、建表、迁移、种子导入、行扫描
+│   │   ├── config/         # .env 与环境变量加载
+│   │   └── jsonx/          # 保序 JSON 分组对象（楼层分组保持插入顺序）
 │   ├── config/rooms.config.json   # 房间初始配置
 │   ├── .env.example        # 环境变量模板
-│   └── package.json
+│   ├── go.mod / go.sum     # Go 模块定义
 ├── Dockerfile              # 多阶段构建（前端构建+后端运行时）
 ├── docker-compose.yml      # 容器编排，数据库持久化到宿主机
 └── .gitignore
@@ -53,8 +55,7 @@ rent-management/
    ```bash
    cd server
    cp .env.example .env       # 按需修改 PORT / DB_PATH
-   npm install
-   npm run dev                # 默认监听 http://localhost:9097
+   go run ./cmd/server        # 默认监听 http://localhost:9097
    ```
 
 2. **前端**（另开终端）：

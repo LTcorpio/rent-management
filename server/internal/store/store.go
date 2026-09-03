@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite" // 纯 Go SQLite 驱动，无需 cgo
 )
@@ -16,7 +17,9 @@ import (
 // Store 持有 SQLite 连接。
 // 与原 better-sqlite3 的同步语义对齐：限制为单连接串行访问，避免并发写锁冲突。
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	path   string
+	closed sync.Once
 }
 
 const schema = `
@@ -81,7 +84,7 @@ func Open(path string) *Store {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
 		log.Fatalf("[db] 设置 WAL 模式失败: %v", err)
 	}
@@ -94,7 +97,42 @@ func Open(path string) *Store {
 func (s *Store) DB() *sql.DB { return s.db }
 
 // Close 关闭数据库连接。
-func (s *Store) Close() error { return s.db.Close() }
+// 关闭前先执行 wal_checkpoint(TRUNCATE)：把 WAL 中已提交事务写回主库，
+// 数据库层自动回滚尚未提交的事务；正常关闭后 SQLite 会删除 -wal/-shm 临时文件，
+// 最后再兜底清理可能残留的空临时文件，保证数据目录干净。
+func (s *Store) Close() error {
+	var err error
+	s.closed.Do(func() {
+		if _, e := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); e != nil {
+			log.Printf("[db] WAL checkpoint 失败（继续关闭）: %v", e)
+		}
+		err = s.db.Close()
+		s.cleanupSidecarFiles()
+	})
+	return err
+}
+
+// cleanupSidecarFiles 兜底清理 -wal/-shm 残留文件。
+// 仅删除 0 字节的残留文件；checkpoint 已在此前执行，非空文件保留并告警，
+// 绝不删除可能含未落盘数据的 WAL，避免丢数据。
+func (s *Store) cleanupSidecarFiles() {
+	for _, suffix := range []string{"-wal", "-shm"} {
+		p := s.path + suffix
+		info, err := os.Stat(p)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if info.Size() == 0 {
+			if err := os.Remove(p); err != nil {
+				log.Printf("[db] 清理临时文件失败 %s: %v", p, err)
+			} else {
+				log.Printf("[db] 已清理残留临时文件: %s", filepath.Base(p))
+			}
+		} else {
+			log.Printf("[db] 警告: %s 非空（%d 字节），已保留，请检查数据库状态", filepath.Base(p), info.Size())
+		}
+	}
+}
 
 func (s *Store) migrate() {
 	if _, err := s.db.Exec(schema); err != nil {

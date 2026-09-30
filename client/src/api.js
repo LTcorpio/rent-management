@@ -14,6 +14,9 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // 身份（SSO 注入的 Remote-* 头，用于权限显隐）
+  getMe: () => request('/me'),
+
   // 房间
   getRooms: () => request('/rooms'),
   updateRoom: (id, data) => request(`/rooms/${id}`, { method: 'PUT', body: JSON.stringify(data) }),

@@ -25,6 +25,7 @@ html, body, #root {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  /* 长辈手机的系统字号本身就调大了，这里基准回到 15px，避免「大上加大」 */
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -43,53 +44,53 @@ button { cursor: pointer; border: none; background: none; }
   max-width: 640px;
   margin: 0 auto;
   min-height: 100vh;
-  padding-bottom: calc(64px + var(--safe-bottom));
+  padding-bottom: calc(24px + var(--safe-bottom));
 }
 
 .page { padding: 12px 12px 24px; }
 
-.page-header {
+.page-header { padding: 12px 12px 4px; }
+.page-title { font-size: 20px; font-weight: 700; margin: 0; }
+.page-sub { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+
+/* ===== 顶部栏：视图切换器（原底部导航移到这里）+ 刷新 ===== */
+.topbar {
   position: sticky;
   top: 0;
-  z-index: 10;
-  background: var(--bg);
-  padding: 10px 12px 6px;
-}
-.page-title { font-size: 19px; font-weight: 700; margin: 0; }
-.page-sub { font-size: 12px; color: var(--text-3); margin-top: 2px; }
-
-/* ===== 底部导航 ===== */
-.tabbar {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  max-width: 640px;
-  margin: 0 auto;
-  background: var(--card);
-  border-top: 1px solid var(--border);
+  z-index: 30;
   display: flex;
-  padding-bottom: var(--safe-bottom);
-  z-index: 20;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg);
 }
-.tabbar a {
+/* 分段控件样式 */
+.segmented {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+}
+.seg-item {
   flex: 1;
   text-align: center;
-  padding: 7px 0 6px;
-  color: var(--text-3);
+  padding: 6px 4px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
   text-decoration: none;
-  font-size: 11px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
-.tabbar a .tab-ico {
-  width: 26px;
-  height: 26px;
-  display: block;
-  transition: transform 0.15s ease;
+.seg-item.active {
+  background: var(--card);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
-.tabbar a.active { color: var(--primary); }
-.tabbar a.active .tab-ico { transform: translateY(-1px); }
 
 /* ===== 存档状态标签（用于年月选择器头部） ===== */
 .mp-inline-head .archived-tag {
@@ -100,42 +101,21 @@ button { cursor: pointer; border: none; background: none; }
   padding: 2px 8px;
   border-radius: 10px;
 }
-.mp-inline-head .draft-tag {
-  margin-left: auto;
-  font-size: 12px;
-  color: #fff;
-  background: #f5222d;
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-/* ===== 右上角刷新按钮 ===== */
-/* 限制在 640px app 容器内：手机端贴右边，宽屏时贴 app 右边缘 */
+/* ===== 右上角刷新按钮（位于顶部栏右侧，随 640px 容器自动约束） ===== */
 .refresh-btn {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  z-index: 50;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-2);
 }
-/* 宽屏：把按钮限制在 max-width 640px 的 app 容器右边缘内 */
-@media (min-width: 641px) {
-  .refresh-btn {
-    right: calc(50% - 320px + 8px);
-  }
-}
-.refresh-btn:active { background: rgba(255,255,255,1); color: var(--primary); }
-.refresh-ico { width: 19px; height: 19px; }
+.refresh-btn:active { background: #fff; color: var(--primary); }
+.refresh-ico { width: 20px; height: 20px; }
 
 /* ===== 楼层 Tab ===== */
 .floor-tabs {
@@ -159,37 +139,52 @@ button { cursor: pointer; border: none; background: none; }
   border-color: var(--primary);
 }
 
-/* ===== 房间卡片 ===== */
+/* ===== 房间卡片（一屏一间） ===== */
 .room-card {
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 12px;
-  margin-bottom: 12px;
 }
+/* 房间号 / 租客 / 进度 / 异常：合并为一行 */
 .room-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
 }
-.room-no { font-size: 17px; font-weight: 700; }
-.tenant-name { font-size: 14px; color: var(--text-2); }
-.tenant-name .no-tenant { color: #faad14; }
+.room-no { font-size: 19px; font-weight: 700; flex-shrink: 0; }
+.tenant-name {
+  font-size: 15px;
+  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tenant-name.no-tenant { color: #faad14; }
+.progress-text {
+  /* 租客名缺失时（长辈端不渲染「未设置租客」）靠它把进度和异常按钮顶到右侧 */
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .room-meta {
   width: 100%;
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 11px;            /* 预设数据较小 */
+  font-size: 13px;
   color: var(--text-3);
-  margin-bottom: 4px;
+  margin-top: 8px;
 }
 .room-meta span b { color: var(--text-2); font-weight: 500; }
 .room-meta .custom-flag {
   font-style: normal;
-  font-size: 10px;
+  font-size: 12px;
   color: #fa8c16;
   background: #fff7e6;
   border: 1px solid #ffd591;
@@ -210,119 +205,214 @@ button { cursor: pointer; border: none; background: none; }
 .price-edit .field input { padding: 5px 8px; font-size: 13px; }
 .price-edit-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
 
-/* 输入区 */
-.input-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 8px 0;
-}
-.input-cell label {
-  display: block;
-  font-size: 12px;
-  color: var(--text-3);
-  margin-bottom: 3px;
-}
-.input-cell .prev {
-  font-size: 11px;
-  color: var(--text-3);
-}
-.input-cell .prev-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-.input-cell .prev-label { font-size: 11px; color: var(--text-3); flex-shrink: 0; }
-.reset-prev-btn {
-  font-size: 11px; color: var(--primary);
-  padding: 2px 6px; border-radius: 4px;
-  background: rgba(22,119,255,0.06); border: 1px solid rgba(22,119,255,0.15);
-  white-space: nowrap;
-}
-.input-cell input {
-  width: 100%;
-  font-size: 20px;            /* 用户输入较大 */
-  font-weight: 600;
-  padding: 8px 10px;
+/* 抄表输入区：水表 / 电表上下分块，间距拉大防误触 */
+.field-block {
   border: 1.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  padding: 8px;
+  margin-top: 8px;
+  background: var(--card);
+}
+/* 引导高亮：当前该填的那一块 */
+.field-block.next {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+.fb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fb-label { font-size: 16px; font-weight: 600; color: var(--text); }
+.fb-flag {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 10px;
+  padding: 1px 10px;
+  flex-shrink: 0;
+}
+.fb-input {
+  width: 100%;
+  font-size: 23px;
+  font-weight: 700;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
   background: #fafbfc;
   color: var(--text);
 }
-/* 上期读数输入框（小尺寸，覆盖 .input-cell input） */
-.input-cell .prev-input {
-  width: 80px; padding: 4px 8px; font-size: 13px; font-weight: 400;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: var(--card); color: var(--text-2);
+.fb-input:focus { outline: none; border-color: var(--primary); background: #fff; }
+.fb-input:disabled { background: var(--bg); color: var(--text-3); }
+/* 上期读数：长辈端为只读标签（与「水表读数」同行），管理员端为可编辑行 */
+.prev-chip {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--text-2);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 2px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.input-cell .prev-input:focus { border-color: var(--primary); outline: none; }
-.input-cell .prev-input:disabled { background: var(--bg); color: var(--text-3); }
-.input-cell input:focus {
-  outline: none;
-  border-color: var(--primary);
-  background: #fff;
+/* 输入框容器：长辈端把上期示数贴在编辑框最右侧，两个示数一眼对照 */
+.fb-input-wrap { position: relative; }
+/* 给编辑框右侧留出上期示数的位置，避免输入的数字被盖住 */
+.fb-input.has-prev { padding-right: 100px; }
+.fb-input-wrap .prev-chip {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0;
+  padding: 3px 10px;
 }
+/* 长辈端：整块可点开修正上期。合并成一个按钮而非并排两个，
+   否则窄屏下「标签 + 上期值 + 按钮」会换行，把一屏一间的高度撑开 */
+.prev-chip-btn { display: inline-flex; align-items: center; gap: 8px; }
+/* 「上期」小字在上一行、示数大字在下一行（输入框高度够，两行更好认） */
+.prev-stack { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; }
+.prev-cap { font-style: normal; font-size: 12px; color: var(--text-3); }
+.prev-num { font-size: 18px; font-weight: 700; color: var(--text); }
+.prev-chip-btn.open .prev-num { color: var(--primary); }
+.prev-chip-btn .prev-edit {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--primary);
+  border-left: 1px solid var(--border);
+  padding-left: 6px;
+}
+.prev-chip-btn.open { background: rgba(22, 119, 255, 0.08); color: var(--primary); }
+.prev-chip-btn.open .prev-edit { border-left-color: rgba(22, 119, 255, 0.25); }
+.prev-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.prev-label { font-size: 14px; color: var(--text-3); flex-shrink: 0; }
+.prev-unit { font-size: 14px; color: var(--text-3); }
+.prev-input {
+  width: 120px; padding: 8px 10px; font-size: 15px; font-weight: 400;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: #fff; color: var(--text-2);
+}
+.prev-input:focus { border-color: var(--primary); outline: none; }
+.reset-prev-btn {
+  font-size: 13px; color: var(--primary);
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(22,119,255,0.06); border: 1px solid rgba(22,119,255,0.15);
+  white-space: nowrap;
+}
+/* 上一间 / 下一间：固定在底部（不随内容滚动） */
+.step-nav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px calc(8px + var(--safe-bottom));
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  z-index: 20;
+}
+/* 当月页内容区：给固定翻页条让出高度 */
+.report-content-wrap.cm-wrap {
+  padding-bottom: calc(74px + var(--safe-bottom));
+}
+.step-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+}
+.step-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.step-btn.primary:active { background: var(--primary-dark); }
+.step-btn:disabled { color: var(--text-3); background: var(--bg); border-color: var(--border); }
 
 /* 结果区 */
 .result {
-  margin-top: 10px;
+  margin-top: 8px;
   border-top: 1px dashed var(--border);
-  padding-top: 10px;
+  padding-top: 8px;
 }
+/* 两栏：左侧水/电/房租各自独占一行，右侧单独一栏显示总计 */
+.result-main { display: flex; align-items: stretch; gap: 10px; }
+.result-rows { flex: 1; min-width: 0; }
 .result-row {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
   font-size: 15px;
-  padding: 3px 0;
+  line-height: 1.3;
   color: var(--text-2);
 }
-.result-row .val { font-size: 17px; font-weight: 600; color: var(--text); }
-.result-row.water .val { color: var(--water); }
-.result-row.elec .val { color: var(--elec); }
-.result-row.rent .val { color: var(--rent); }
-.result-row.total {
-  margin-top: 4px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-  font-size: 16px;
-  font-weight: 700;
+.result-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.result-row b { font-size: 17px; font-weight: 700; color: var(--text); white-space: nowrap; }
+/* 「元」跟「共计」那栏一样用小一号细体，不跟数字抢视觉 */
+.result-row b i { font-size: 13px; font-style: normal; font-weight: 400; margin-left: 2px; }
+.result-row.water b { color: var(--water); }
+.result-row.elec b { color: var(--elec); }
+.result-row.rent b { color: var(--rent); }
+.result-grand {
+  flex: 0 0 auto;
+  min-width: 92px;
+  max-width: 46%;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
 }
-.result-row.total .val { font-size: 22px; color: var(--total); }
+.rg-label { font-size: 13px; color: var(--text-3); }
+.rg-val { font-size: 22px; font-weight: 700; color: var(--total); line-height: 1.15; white-space: nowrap; }
+.rg-val i { font-size: 13px; font-style: normal; font-weight: 400; margin-left: 2px; }
 
 .copy-btn {
   width: 100%;
-  margin-top: 10px;
-  padding: 11px;
+  margin-top: 8px;
+  padding: 12px;
   border-radius: 8px;
   background: var(--primary);
   color: #fff;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
 }
 .copy-btn:active { background: var(--primary-dark); }
 .copy-btn.done { background: #52c41a; }
 
+/* 复制预览压成一行，超出省略（完整文本点按钮即复制） */
 .copy-preview {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text-3);
   background: #fafbfc;
   border-radius: 6px;
-  padding: 6px 8px;
-  line-height: 1.6;
-  word-break: break-all;
+  padding: 5px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ===== 存档操作 ===== */
+/* ===== 存档操作（仅管理员可见，悬浮在固定翻页条上方） ===== */
 .archive-bar {
   position: sticky;
-  bottom: calc(64px + var(--safe-bottom) + 8px);
-  margin: 12px 0;
+  bottom: calc(74px + var(--safe-bottom) + 8px);
+  margin: 12px 0 calc(74px + var(--safe-bottom));
 }
 .archive-bar button {
   width: 100%;
-  padding: 14px;
+  padding: 16px;
   border-radius: 10px;
   background: var(--total);
   color: #fff;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   box-shadow: 0 4px 12px rgba(245, 34, 45, 0.3);
 }
@@ -521,8 +611,8 @@ button { cursor: pointer; border: none; background: none; }
 /* ===== 异常项标记 ===== */
 .exc-btn {
   margin-left: auto;
-  padding: 3px 9px;
-  font-size: 11px;
+  padding: 4px 10px;
+  font-size: 12px;
   border-radius: 12px;
   background: #fafbfc;
   border: 1px solid var(--border);
@@ -571,9 +661,44 @@ button { cursor: pointer; border: none; background: none; }
   font-weight: 600;
   color: var(--text);
 }
+/* 只显示月份（年份在左侧下拉框里），收起的月份选择器全靠它标出当前月 */
 .mp-current {
-  font-size: 13px;
-  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* 可收起形态：默认只显示一行「年份 + 月份」，点击「切换月份」再展开网格 */
+.mp-inline.collapsible { padding: 6px 10px; }
+.mp-inline.collapsible .mp-inline-head { margin-bottom: 0; }
+.mp-inline.collapsible.open { padding-bottom: 12px; }
+.mp-inline.collapsible.open .mp-inline-head { margin-bottom: 10px; }
+.mp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(22, 119, 255, 0.08);
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mp-chev { width: 16px; height: 16px; transition: transform 0.15s ease; }
+.mp-chev.down { transform: rotate(180deg); }
+/* 窄屏（≤380px）：年份框 / 月份 / 存档标签 / 切换按钮四个元素同排，
+   统一收窄字号和内边距，避免挤在一起或溢出 */
+@media (max-width: 380px) {
+  .mp-inline.collapsible { padding: 6px 8px; }
+  .mp-inline-head { gap: 6px; }
+  .mp-year-select { font-size: 13px; padding: 4px 6px; }
+  .mp-current { font-size: 14px; }
+  .mp-inline-head .archived-tag { font-size: 11px; padding: 2px 6px; }
+  .mp-toggle { font-size: 13px; padding: 4px 8px; }
+  .mp-chev { width: 14px; height: 14px; }
 }
 .mp-month-grid {
   display: grid;
@@ -709,7 +834,7 @@ button { cursor: pointer; border: none; background: none; }
 }
 .trend-drawer {
   position: fixed;
-  bottom: calc(64px + var(--safe-bottom) + 12px);
+  bottom: calc(12px + var(--safe-bottom));
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 24px);

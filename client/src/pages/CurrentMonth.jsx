@@ -3,29 +3,44 @@ import { api } from '../api.js';
 import { money, num, buildCopyText, copyText, showToast, currentYM, yearOptions } from '../utils.js';
 import MonthPicker from '../MonthPicker.jsx';
 
-export default function CurrentMonth() {
+// 当月收租：一屏一间房的引导式抄表。
+// 长辈端（isAdmin=false）只填两个本期读数，上期读数只读展示，
+// 不含改价/改上期/存档按钮；管理员端额外显示这些管理功能。
+export default function CurrentMonth({ isAdmin = false }) {
   const { year: cy, month: cm } = currentYM();
   const [year, setYear] = useState(cy);
   const [month, setMonth] = useState(cm);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [floors, setFloors] = useState([]);
-  const [activeFloor, setActiveFloor] = useState('');
+  const [index, setIndex] = useState(0);
   const [copiedId, setCopiedId] = useState(null);
   const [archiving, setArchiving] = useState(false);
   const [archivedMonths, setArchivedMonths] = useState(() => new Set());
+  // 归档列表就绪前不加载数据：否则会先按当前月拉一次，再闪切到次月
+  const [archivedReady, setArchivedReady] = useState(false);
   const saveTimers = useRef({});
   const dataRef = useRef(null);
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // 加载已存档年月列表（用于在 MonthPicker 中禁用已存档月份）
+  // 加载已存档年月列表（用于在 MonthPicker 中禁用已存档月份），并据此决定初始月份：
+  // 默认显示当前月；若当前月已归档（数据已锁定为只读），顺延到下一个未归档月份，
+  // 避免一进页面就是不能再抄表的过去月份。跨年自动进位。
   useEffect(() => {
     api.getHistory().then((rows) => {
-      setArchivedMonths(new Set(rows.map((r) => `${r.year}-${r.month}`)));
-    }).catch(() => {});
-  }, []);
+      const set = new Set(rows.map((r) => `${r.year}-${r.month}`));
+      let y = cy;
+      let m = cm;
+      for (let i = 0; i < 36 && set.has(`${y}-${m}`); i++) {
+        if (m === 12) { y += 1; m = 1; } else { m += 1; }
+      }
+      setArchivedMonths(set);
+      if (y !== cy || m !== cm) { setYear(y); setMonth(m); }
+      setArchivedReady(true);
+    }).catch(() => setArchivedReady(true));
+  }, []); // eslint-disable-line
 
   const load = useCallback(async () => {
+    if (!archivedReady) return;
     setLoading(true);
     try {
       const res = await api.getMonth(year, month);
@@ -44,21 +59,19 @@ export default function CurrentMonth() {
         });
       }
       setData({ ...res, grouped });
-      const fs = Object.keys(grouped);
-      setFloors(fs);
-      if (fs.length && !fs.includes(activeFloor)) setActiveFloor(fs[0]);
+      setIndex(0);
     } catch (e) {
       showToast('加载失败: ' + e.message);
     } finally {
       setLoading(false);
     }
-  }, [year, month]); // eslint-disable-line
+  }, [year, month, archivedReady]); // eslint-disable-line
 
   useEffect(() => { load(); }, [load]);
 
   // 输入即时更新本地 + 防抖保存
   // field 支持：water_reading / electricity_reading / prev_water / prev_elec / rent / water_price / elec_price
-  const handleInput = (roomId, field, value) => {
+  const handleInput = (roomId, field, value, reset = false) => {
     setData((prev) => {
       if (!prev) return prev;
       const grouped = { ...prev.grouped };
@@ -71,12 +84,15 @@ export default function CurrentMonth() {
             const isWater = field === 'prev_water';
             const customKey = isWater ? 'prev_water_custom' : 'prev_electricity_custom';
             const prevKey = isWater ? 'prev_water_reading' : 'prev_electricity_reading';
-            if (value === '' || value === null) {
+            if (reset) {
+              // 「恢复默认」：清掉自定义，回到房间的默认上期读数
               updated[customKey] = null;
               updated[prevKey] = isWater ? item.default_prev_water : item.default_prev_elec;
             } else {
-              updated[customKey] = Number(value);
-              updated[prevKey] = Number(value);
+              // 清空输入框按 0 记；不能回落成默认读数，否则退格删到最后一个数字时会弹回原值
+              const n = value === '' || value === null ? 0 : Number(value);
+              updated[customKey] = n;
+              updated[prevKey] = n;
             }
           } else if (field === 'rent' || field === 'water_price' || field === 'elec_price') {
             // 当月覆盖租金/单价：写 custom，空=恢复预设
@@ -128,7 +144,7 @@ export default function CurrentMonth() {
 
   // 恢复默认上期读数
   const handleResetPrev = (roomId, type) => {
-    handleInput(roomId, type === 'water' ? 'prev_water' : 'prev_elec', '');
+    handleInput(roomId, type === 'water' ? 'prev_water' : 'prev_elec', '', true);
   };
 
   const handleCopy = async (item) => {
@@ -182,77 +198,115 @@ export default function CurrentMonth() {
     } catch (e) { showToast('标记失败: ' + e.message); }
   };
 
-  // 派生数据仅在 data 存在时计算
-  const items = data?.grouped?.[activeFloor] || [];
-  const allItems = data ? Object.values(data.grouped).flat() : [];
-  const archived = data && allItems.length > 0 && allItems.every((i) => i.archived === 1);
-  const hasAnyInput = allItems.some((i) => i.calc?.hasInput);
+  // 按楼层顺序摊平成一条房间队列，逐间展示
+  const rooms = data?.grouped
+    ? Object.entries(data.grouped).flatMap(([floor, arr]) => arr.map((it) => ({ ...it, floor })))
+    : [];
+  const total = rooms.length;
+  const safeIndex = total ? Math.min(Math.max(index, 0), total - 1) : 0;
+  const current = rooms[safeIndex];
+  const archived = total > 0 && rooms.every((i) => i.archived === 1);
+  const hasAnyInput = rooms.some((i) => i.calc?.hasInput);
+
+  const goPrev = () => setIndex((v) => Math.max(0, v - 1));
+  const goNext = () => setIndex((v) => Math.min(total - 1, v + 1));
 
   return (
-    <>
-      <div className="page-header">
-        <h1 className="page-title">当月收租</h1>
-        <div className="page-sub">输入抄表读数，自动计算房租</div>
+    <div className="page">
+      {/* 标题已由顶部「当月」切换器表达，此处不再重复标题行，把高度留给房间内容 */}
+      {/* extra 只在已存档时给：能进到本页的月份本来都是未存档的，不必再标「未存档」 */}
+      <MonthPicker
+        year={year}
+        month={month}
+        years={yearOptions()}
+        onChange={(y, m) => { setYear(y); setMonth(m); }}
+        archivedMonths={archivedMonths}
+        extra={archived ? <span className="archived-tag">已存档</span> : null}
+        collapsible
+      />
+
+      {/* 内容区：切换年月时遮罩 + 加载动画，保留 MonthPicker 可见 */}
+      <div className="report-content-wrap cm-wrap">
+        {data && (
+          <div className={'report-content' + (loading ? ' masked' : '')}>
+            {archived ? (
+              <div className="empty">该月已存档，不再显示明细。可在「历史」查看或修改存档数据。</div>
+            ) : total === 0 ? (
+              <div className="empty">暂无房间，请到设置中添加</div>
+            ) : (
+              <RoomPanel
+                key={current.room_id}
+                item={current}
+                index={safeIndex}
+                total={total}
+                isAdmin={isAdmin}
+                month={month}
+                onInput={handleInput}
+                onResetPrev={handleResetPrev}
+                onResetPrice={handleResetPrice}
+                onCopy={handleCopy}
+                onException={handleException}
+                copied={copiedId === current.room_id}
+              />
+            )}
+          </div>
+        )}
+
+        {/* 加载遮罩：覆盖在内容区上方 */}
+        {loading && (
+          <div className="loading-overlay">
+            <div className="spinner" />
+            <span>加载中…</span>
+          </div>
+        )}
+
+        {/* 首次加载且无数据 */}
+        {!loading && !data && <div className="empty">暂无房间，请到设置中添加</div>}
       </div>
 
-      <div className="page">
-        <MonthPicker
-          year={year}
-          month={month}
-          years={yearOptions()}
-          onChange={(y, m) => { setYear(y); setMonth(m); }}
-          archivedMonths={archivedMonths}
-          extra={archived ? <span className="archived-tag">已存档</span> : <span className="draft-tag">未存档</span>}
-        />
-
-        {/* 内容区：切换年月时遮罩 + 加载动画，保留 MonthPicker 可见 */}
-        <div className="report-content-wrap">
-          {data && (
-            <div className={'report-content' + (loading ? ' masked' : '')}>
-              {floors.length > 0 && !archived && (
-                <div className="floor-tabs">
-                  {floors.map((f) => (
-                    <button key={f} className={activeFloor === f ? 'active' : ''} onClick={() => setActiveFloor(f)}>{f}</button>
-                  ))}
-                </div>
-              )}
-
-              {archived ? (
-                <div className="empty">该月已存档，不再显示明细。可在「历史」查看或修改存档数据。</div>
-              ) : (
-                <>
-                  {items.map((item) => (
-                    <RoomCard key={item.room_id} item={item} onInput={handleInput} onResetPrev={handleResetPrev} onResetPrice={handleResetPrice} onCopy={handleCopy} onException={handleException} copied={copiedId === item.room_id} archived={archived} />
-                  ))}
-
-                  <div className="archive-bar">
-                    <button onClick={handleArchive} disabled={archiving || !hasAnyInput}>
-                      {archiving ? '存档中…' : `保存并上传 ${year}年${month}月 数据`}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* 加载遮罩：覆盖在内容区上方 */}
-          {loading && (
-            <div className="loading-overlay">
-              <div className="spinner" />
-              <span>加载中…</span>
-            </div>
-          )}
-
-          {/* 首次加载且无数据 */}
-          {!loading && !data && <div className="empty">暂无房间，请到设置中添加</div>}
+      {isAdmin && !archived && total > 0 && (
+        <div className="archive-bar">
+          <button onClick={handleArchive} disabled={archiving || !hasAnyInput}>
+            {archiving ? '存档中…' : `保存并上传 ${year}年${month}月 数据`}
+          </button>
         </div>
-      </div>
-    </>
+      )}
+
+      {/* 翻页条固定在底部，不随内容滚动，避免一屏放不下时还要滑到底部才能翻间 */}
+      {!archived && total > 0 && (
+        <div className="step-nav">
+          <button className="step-btn" onClick={goPrev} disabled={safeIndex === 0}>← 上一间</button>
+          <button className="step-btn primary" onClick={goNext} disabled={safeIndex >= total - 1}>下一间 →</button>
+        </div>
+      )}
+    </div>
   );
 }
 
-function RoomCard({ item, onInput, onResetPrev, onResetPrice, onCopy, onException, copied, archived }) {
+// 单间房面板：一屏一间，水表 / 电表上下分块；翻页条由外层固定渲染
+function RoomPanel({
+  item, index, total, isAdmin, month,
+  onInput, onResetPrev, onResetPrice, onCopy, onException, copied,
+}) {
   const { room, calc, tenant } = item;
+  const [showPrice, setShowPrice] = useState(false);
+  // 长辈端：上期读数默认只读，点「改」才展开输入行，避免误触改错基准读数
+  const [showPrev, setShowPrev] = useState({ water: false, elec: false });
+  // 输入框正在编辑的原始文本。state 里的值可能是数字（清空后会被记成 0 或 null），
+  // 直接拿来当 value 会让退格删不干净；这里先存用户的原文，失焦后再交还给 state。
+  const [draft, setDraft] = useState({});
+  const shown = (k, committed) =>
+    draft[k] !== undefined ? draft[k] : (committed === null || committed === undefined ? '' : String(committed));
+  const editNum = (k, field, raw) => {
+    setDraft((d) => ({ ...d, [k]: raw }));
+    onInput(item.room_id, field, raw);
+  };
+  const endEdit = (k) => setDraft((d) => {
+    const next = { ...d };
+    delete next[k];
+    return next;
+  });
+
   const waterCustom = item.prev_water_custom !== null && item.prev_water_custom !== undefined;
   const elecCustom = item.prev_electricity_custom !== null && item.prev_electricity_custom !== undefined;
   const rentCustom = item.custom_monthly_rent !== null && item.custom_monthly_rent !== undefined;
@@ -263,12 +317,23 @@ function RoomCard({ item, onInput, onResetPrev, onResetPrice, onCopy, onExceptio
   const effRent = rentCustom ? item.custom_monthly_rent : room.monthly_rent;
   const effWup = wupCustom ? item.custom_water_unit_price : room.water_unit_price;
   const effEup = eupCustom ? item.custom_electricity_unit_price : room.electricity_unit_price;
-  const [showPrice, setShowPrice] = useState(false);
+
+  const filled = (v) => v !== null && v !== undefined && v !== '';
+  // 引导：先填水表，再填电表
+  const nextField = !filled(item.water_reading) ? 'water' : !filled(item.electricity_reading) ? 'elec' : null;
+
   return (
     <div className="room-card">
+      {/* 房间号 / 租客 / 进度 / 异常合并成一行，省下三行高度 */}
       <div className="room-head">
         <span className="room-no">{room.room_number}</span>
-        {tenant ? <span className="tenant-name">{tenant.name}{tenant.occupants ? ` · ${tenant.occupants}人` : ''}</span> : <span className="tenant-name no-tenant">未设置租客</span>}
+        {tenant ? (
+          <span className="tenant-name">{tenant.name}{tenant.occupants ? ` · ${tenant.occupants}人` : ''}</span>
+        ) : isAdmin ? (
+          // 长辈端不显示「未设置租客」，避免误以为要自己去补；只在管理员端提示
+          <span className="tenant-name no-tenant">未设置租客</span>
+        ) : null}
+        <span className="progress-text">第{index + 1}/{total}间</span>
         <button
           className={'exc-btn' + (hasException ? ' active' : '')}
           onClick={() => onException(item)}
@@ -278,31 +343,31 @@ function RoomCard({ item, onInput, onResetPrev, onResetPrice, onCopy, onExceptio
         </button>
       </div>
       {hasException && <div className="exc-note">⚠ {item.exception_note}</div>}
+
+      {/* 租金 / 单价：长辈端与管理员端都可见可改，编辑框默认收起，点「改价」才展开 */}
       <div className="room-meta">
         <span><b>租金</b> {money(effRent)}元/月{rentCustom && <i className="custom-flag">自定义</i>}</span>
         <span><b>水</b> {num(effWup)}元/吨{wupCustom && <i className="custom-flag">自定义</i>}</span>
         <span><b>电</b> {num(effEup)}元/度{eupCustom && <i className="custom-flag">自定义</i>}</span>
-        {!archived && (
-          <button className="link-btn toggle-price-btn" onClick={() => setShowPrice((v) => !v)}>
-            {showPrice ? '收起' : '改价'}
-          </button>
-        )}
+        <button className="link-btn toggle-price-btn" onClick={() => setShowPrice((v) => !v)}>
+          {showPrice ? '收起' : '改价'}
+        </button>
       </div>
 
-      {showPrice && !archived && (
+      {showPrice && (
         <div className="price-edit">
           <div className="row-3">
             <div className="field">
               <label>月租金（元）</label>
-              <input type="number" inputMode="decimal" step="1" value={rentCustom ? item.custom_monthly_rent : ''} onChange={(e) => onInput(item.room_id, 'rent', e.target.value)} placeholder={num(room.monthly_rent)} />
+              <input type="number" inputMode="decimal" step="1" value={shown('rent', rentCustom ? item.custom_monthly_rent : null)} onChange={(e) => editNum('rent', 'rent', e.target.value)} onBlur={() => endEdit('rent')} placeholder={num(room.monthly_rent)} />
             </div>
             <div className="field">
               <label>水单价（元/吨）</label>
-              <input type="number" inputMode="decimal" step="1" value={wupCustom ? item.custom_water_unit_price : ''} onChange={(e) => onInput(item.room_id, 'water_price', e.target.value)} placeholder={num(room.water_unit_price)} />
+              <input type="number" inputMode="decimal" step="1" value={shown('wup', wupCustom ? item.custom_water_unit_price : null)} onChange={(e) => editNum('wup', 'water_price', e.target.value)} onBlur={() => endEdit('wup')} placeholder={num(room.water_unit_price)} />
             </div>
             <div className="field">
               <label>电单价（元/度）</label>
-              <input type="number" inputMode="decimal" step="1" value={eupCustom ? item.custom_electricity_unit_price : ''} onChange={(e) => onInput(item.room_id, 'elec_price', e.target.value)} placeholder={num(room.electricity_unit_price)} />
+              <input type="number" inputMode="decimal" step="1" value={shown('eup', eupCustom ? item.custom_electricity_unit_price : null)} onChange={(e) => editNum('eup', 'elec_price', e.target.value)} onBlur={() => endEdit('eup')} placeholder={num(room.electricity_unit_price)} />
             </div>
           </div>
           {(rentCustom || wupCustom || eupCustom) && (
@@ -314,71 +379,134 @@ function RoomCard({ item, onInput, onResetPrev, onResetPrice, onCopy, onExceptio
         </div>
       )}
 
-      <div className="input-grid">
-        <div className="input-cell">
-          <label>水表读数（吨）</label>
+      {/* 水表 */}
+      <div className={'field-block' + (nextField === 'water' ? ' next' : '')}>
+        <div className="fb-head">
+          <span className="fb-label">水表读数（吨）</span>
+          {nextField === 'water' && <span className="fb-flag">填这里</span>}
+        </div>
+        <div className="fb-input-wrap">
           <input
+            className={'fb-input' + (isAdmin ? '' : ' has-prev')}
             type="number"
             inputMode="decimal"
             step="1"
-            value={item.water_reading ?? ''}
-            onChange={(e) => onInput(item.room_id, 'water_reading', e.target.value)}
-            disabled={archived}
-            placeholder="水表抄表"
+            value={shown('water', item.water_reading)}
+            onChange={(e) => editNum('water', 'water_reading', e.target.value)}
+            onBlur={() => endEdit('water')}
+            placeholder={`${room.room_number}水表读数`}
           />
+          {/* 长辈端：上期示数贴在编辑框最右侧，与本期读数同框对照；整块可点开修正 */}
+          {!isAdmin && (
+            <button
+              type="button"
+              className={'prev-chip prev-chip-btn' + (showPrev.water ? ' open' : '')}
+              onClick={() => setShowPrev((v) => ({ ...v, water: !v.water }))}
+            >
+              <span className="prev-stack">
+                <i className="prev-cap">上期</i>
+                <b className="prev-num">{num(item.prev_water_reading ?? 0)}</b>
+              </span>
+              <i className="prev-edit">{showPrev.water ? '收起' : '改'}</i>
+            </button>
+          )}
+        </div>
+        {(isAdmin || showPrev.water) && (
           <div className="prev-row">
             <span className="prev-label">上期</span>
             <input
+              className="prev-input"
               type="number"
               inputMode="decimal"
               step="1"
-              className="prev-input"
-              value={item.prev_water_reading ?? ''}
-              onChange={(e) => onInput(item.room_id, 'prev_water', e.target.value)}
-              disabled={archived}
+              value={shown('prevWater', item.prev_water_reading)}
+              onChange={(e) => editNum('prevWater', 'prev_water', e.target.value)}
+              onBlur={() => endEdit('prevWater')}
               placeholder="0"
             />
-            {waterCustom && !archived && (
+            <span className="prev-unit">吨</span>
+            {waterCustom && (
               <button className="reset-prev-btn" onClick={() => onResetPrev(item.room_id, 'water')}>恢复默认</button>
             )}
           </div>
+        )}
+      </div>
+
+      {/* 电表 */}
+      <div className={'field-block' + (nextField === 'elec' ? ' next' : '')}>
+        <div className="fb-head">
+          <span className="fb-label">电表读数（度）</span>
+          {nextField === 'elec' && <span className="fb-flag">填这里</span>}
         </div>
-        <div className="input-cell">
-          <label>电表读数（度）</label>
+        <div className="fb-input-wrap">
           <input
+            className={'fb-input' + (isAdmin ? '' : ' has-prev')}
             type="number"
             inputMode="decimal"
             step="1"
-            value={item.electricity_reading ?? ''}
-            onChange={(e) => onInput(item.room_id, 'electricity_reading', e.target.value)}
-            disabled={archived}
-            placeholder="电表抄表"
+            value={shown('elec', item.electricity_reading)}
+            onChange={(e) => editNum('elec', 'electricity_reading', e.target.value)}
+            onBlur={() => endEdit('elec')}
+            placeholder={`${room.room_number}电表读数`}
           />
+          {!isAdmin && (
+            <button
+              type="button"
+              className={'prev-chip prev-chip-btn' + (showPrev.elec ? ' open' : '')}
+              onClick={() => setShowPrev((v) => ({ ...v, elec: !v.elec }))}
+            >
+              <span className="prev-stack">
+                <i className="prev-cap">上期</i>
+                <b className="prev-num">{num(item.prev_electricity_reading ?? 0)}</b>
+              </span>
+              <i className="prev-edit">{showPrev.elec ? '收起' : '改'}</i>
+            </button>
+          )}
+        </div>
+        {(isAdmin || showPrev.elec) && (
           <div className="prev-row">
             <span className="prev-label">上期</span>
             <input
+              className="prev-input"
               type="number"
               inputMode="decimal"
               step="1"
-              className="prev-input"
-              value={item.prev_electricity_reading ?? ''}
-              onChange={(e) => onInput(item.room_id, 'prev_elec', e.target.value)}
-              disabled={archived}
+              value={shown('prevElec', item.prev_electricity_reading)}
+              onChange={(e) => editNum('prevElec', 'prev_elec', e.target.value)}
+              onBlur={() => endEdit('prevElec')}
               placeholder="0"
             />
-            {elecCustom && !archived && (
+            <span className="prev-unit">度</span>
+            {elecCustom && (
               <button className="reset-prev-btn" onClick={() => onResetPrev(item.room_id, 'elec')}>恢复默认</button>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       {calc?.hasInput && (
         <div className="result">
-          <div className="result-row water"><span>用水 {num(calc.waterUsage)} 吨</span><span className="val">{money(calc.waterFee)} 元</span></div>
-          <div className="result-row elec"><span>用电 {num(calc.elecUsage)} 度</span><span className="val">{money(calc.elecFee)} 元</span></div>
-          <div className="result-row rent"><span>房租</span><span className="val">{money(calc.rent)} 元</span></div>
-          <div className="result-row total"><span>共计</span><span className="val">{money(calc.total)} 元</span></div>
+          {/* 两栏：左侧水/电/房租各自独占一行，右侧单独一栏显示总计 */}
+          <div className="result-main">
+            <div className="result-rows">
+              <div className="result-row water">
+                <span>水 {num(calc.waterUsage)} 吨</span>
+                <b>{money(calc.waterFee)}<i>元</i></b>
+              </div>
+              <div className="result-row elec">
+                <span>电 {num(calc.elecUsage)} 度</span>
+                <b>{money(calc.elecFee)}<i>元</i></b>
+              </div>
+              <div className="result-row rent">
+                <span>房租</span>
+                <b>{money(calc.rent)}<i>元</i></b>
+              </div>
+            </div>
+            <div className="result-grand">
+              <span className="rg-label">共计</span>
+              <b className="rg-val">{money(calc.total)}<i>元</i></b>
+            </div>
+          </div>
           <button className={'copy-btn' + (copied ? ' done' : '')} onClick={() => onCopy(item)}>
             {copied ? '✓ 已复制' : '复制房租信息'}
           </button>

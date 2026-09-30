@@ -50,6 +50,9 @@ func New(db *sql.DB, clientDist string) http.Handler {
 	// 健康检查
 	mux.HandleFunc("GET /api/health", s.health)
 
+	// 身份：供前端做权限显隐（管理员才显示设置页与「保存并上传」）
+	mux.HandleFunc("GET /api/me", s.me)
+
 	// 其余路径：前端静态资源与 SPA 回退
 	mux.HandleFunc("/", s.handleRoot)
 
@@ -62,6 +65,47 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 		"ok":   true,
 		"time": time.Now().UTC().Format("2006-01-02T15:04:05.000") + "Z",
 	})
+}
+
+// me 身份查询：GET /api/me
+//
+// 身份来自反向代理注入的请求头，由 nginx + Authelia（auth_request）在
+// https://rent.home.lan 上写入；局域网 IP:端口直连不带这些头，故视为未登录。
+// 管理员判定：Remote-Groups 中以逗号分隔的组名包含 admins。
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	// 身份随登录态变化，禁止任何缓存，避免切换账号后仍拿到旧身份
+	w.Header().Set("Cache-Control", "no-store")
+	user := r.Header.Get("Remote-User")
+	groups := splitCSV(r.Header.Get("Remote-Groups"))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":          user,
+		"name":          r.Header.Get("Remote-Name"),
+		"email":         r.Header.Get("Remote-Email"),
+		"groups":        groups,
+		"authenticated": user != "",
+		"isAdmin":       hasGroup(groups, "admins"),
+	})
+}
+
+// splitCSV 按逗号切分请求头中的列表（去除空白项），空串返回空切片。
+func splitCSV(raw string) []string {
+	out := []string{}
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// hasGroup 判断组列表中是否包含指定组名。
+func hasGroup(groups []string, want string) bool {
+	for _, g := range groups {
+		if g == want {
+			return true
+		}
+	}
+	return false
 }
 
 // cors 与原版 cors() 默认行为一致：允许所有来源，处理预检请求。
